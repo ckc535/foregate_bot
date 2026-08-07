@@ -1,0 +1,17 @@
+# Environment and secret credentials
+.env
+*.env.local
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Scanned data files
+all_markets_sorted.json
+scan_results.json
+scan_results.txt
+
+# OS metadata
+.DS_Store
+Thumbs.db
