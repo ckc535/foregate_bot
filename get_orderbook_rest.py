@@ -92,72 +92,78 @@ def calculate_vwap_buy(order_list, target_shares):
     return avg_price, total_cost, filled_size, orders
 
 
-def find_max_shares_for_target_gap(higher_asks, lower_asks, max_pair_shares, target_max_gap_pct, step_shares=50.0):
+def find_max_shares_for_target_gap(higher_asks, lower_asks, max_pair_shares, target_max_gap_pct, step_shares=10.0):
     """
-    Tính mốc mua tối đa bằng cách bắt đầu từ các mốc nhỏ (10, 20, 50, 100 shares...), kiểm tra % Lệch ((A+B) - S)/(A+B) * 100%.
-    Nếu thỏa mãn <= target_max_gap_pct, tiếp tục cộng thêm +50 shares cho tới khi vượt ngưỡng hoặc đạt max liquidity.
+    Tính mốc mua tối đa bằng cách bắt đầu từ 50 shares, kiểm tra % Lệch ((A+B) - S)/(A+B) * 100%.
+    Nếu thỏa mãn <= target_max_gap_pct, tiếp tục cộng thêm +10 shares cho tới khi vượt ngưỡng hoặc đạt max liquidity.
     """
     if max_pair_shares <= 0:
         return 0.0, 0.0, False, 0.0, 0.0
 
-    # Lập danh sách các mốc shares cần test bắt đầu từ nấc nhỏ (10, 20, 50) rồi tăng dần +50 (100, 150, 200...)
     candidate_shares = []
-    initial_steps = [10.0, 20.0, 50.0]
-    for s in initial_steps:
-        if s <= max_pair_shares and (not candidate_shares or s > candidate_shares[-1]):
-            candidate_shares.append(s)
-
-    current = 100.0
-    while current <= max_pair_shares:
-        if not candidate_shares or current > candidate_shares[-1]:
-            candidate_shares.append(current)
-        current += step_shares
-
-    if not candidate_shares or candidate_shares[-1] < max_pair_shares:
+    current = 50.0
+    
+    # Nếu thanh khoản tối đa còn nhỏ hơn 50, ta test mốc lớn nhất có thể
+    if max_pair_shares < 50.0:
         candidate_shares.append(max_pair_shares)
+    else:
+        while current <= max_pair_shares:
+            candidate_shares.append(current)
+            current += step_shares
+
+        # Đảm bảo test mốc cuối cùng (max_pair_shares) nếu nó lẻ
+        if candidate_shares[-1] < max_pair_shares:
+            candidate_shares.append(max_pair_shares)
 
     best_s = 0.0
     best_gap = 0.0
     best_cost_1 = 0.0
     best_cost_2 = 0.0
 
-    closest_s = candidate_shares[0]
-    closest_gap = float('inf')
+    closest_s = candidate_shares[0] if candidate_shares else 0.0
+    closest_gap = float('-inf')
     closest_cost_1 = 0.0
     closest_cost_2 = 0.0
+
+    fail_reason = "Không có thanh khoản hoặc không thoả mãn điều kiện"
 
     for s in candidate_shares:
         avg_h, cost_h, _, _ = calculate_vwap_buy(higher_asks, s)
         avg_l, cost_l, _, _ = calculate_vwap_buy(lower_asks, s)
         if avg_h <= 0 or avg_l <= 0:
+            fail_reason = f"Mốc {s:.2f} shares thất bại: Thiếu thanh khoản ở một trong hai bên."
             continue
 
         total_cost = cost_h + cost_l
         if total_cost <= 0:
+            fail_reason = f"Mốc {s:.2f} shares thất bại: Tổng chi phí = 0."
             continue
 
-        # Công thức % Lệch chuẩn từ User: ((A + B) - S) / (A + B) * 100%
-        gap = ((total_cost - s) / total_cost) * 100.0
+        # Công thức % Lệch: (S - (A + B)) / (A + B) * 100%
+        # Dương = lãi (arbitrage), Âm = lỗ
+        gap = ((s - total_cost) / total_cost) * 100.0
 
-        if gap < closest_gap:
+        if gap > closest_gap:
             closest_gap = gap
             closest_s = s
             closest_cost_1 = cost_h
             closest_cost_2 = cost_l
 
-        if gap <= target_max_gap_pct:
+        if gap >= -target_max_gap_pct:
             best_s = s
             best_gap = gap
             best_cost_1 = cost_h
             best_cost_2 = cost_l
+            fail_reason = f"Đã đạt mốc thanh khoản tối đa khả dụng ({max_pair_shares:.2f} shares)."
         else:
-            # Ngay khi tại nấc này gap vượt quá target %, dừng lại không cộng thêm nữa
+            # Ngay khi tại nấc này gap quá âm (lỗ vượt ngưỡng), dừng lại
+            fail_reason = f"Mốc {s:.2f} shares thất bại: Lệch {gap:+.2f}% vượt ngưỡng lỗ cho phép -{target_max_gap_pct:.2f}%."
             break
 
     if best_s > 0:
-        return best_s, best_gap, True, best_cost_1, best_cost_2
+        return best_s, best_gap, True, best_cost_1, best_cost_2, fail_reason
     else:
-        return closest_s, closest_gap, False, closest_cost_1, closest_cost_2
+        return closest_s, closest_gap, False, closest_cost_1, closest_cost_2, fail_reason
 
 
 def analyze_dual_option_hedged_buy(sorted_asks_1, sorted_asks_2, opt1_name, opt2_name, target_max_gap_pct=5.0):
@@ -238,33 +244,30 @@ def analyze_dual_option_hedged_buy(sorted_asks_1, sorted_asks_2, opt1_name, opt2
     max_pair_shares = min(total_avail_shares_higher, total_avail_shares_lower)
 
     # BƯỚC 1: Tính số lượng shares (S) tối đa đạt Độ lệch TB Giá Mục tiêu (%) theo từng mốc (100 -> +50)
-    target_shares, actual_gap_pct, is_valid, cost_h_calc, cost_l_calc = find_max_shares_for_target_gap(
+    target_shares, actual_gap_pct, is_valid, cost_h_calc, cost_l_calc, fail_reason = find_max_shares_for_target_gap(
         higher_asks, lower_asks, max_pair_shares, target_max_gap_pct
     )
 
     if target_shares <= 0 or not is_valid:
-        test_s = min(100.0, max_pair_shares)
+        test_s = min(50.0, max_pair_shares)
         avg_h_test, test_cost_a, _, _ = calculate_vwap_buy(higher_asks, test_s)
         avg_l_test, test_cost_b, _, _ = calculate_vwap_buy(lower_asks, test_s)
         test_total = test_cost_a + test_cost_b
-        initial_gap = ((test_total - test_s) / test_total) * 100.0 if test_total > 0 else 0.0
+        initial_gap = ((test_s - test_total) / test_total) * 100.0 if test_total > 0 else 0.0
 
         explanation = (
-            f"Orderbook hiện tại không có mốc volume nào thỏa mãn độ lệch <= {target_max_gap_pct:.2f}%.\n\n"
-            f"   📐 CÔNG THỨC & CÁCH TÍNH DỪNG THEO MỐC SHARES (100 -> +50 shares):\n"
+            f"Orderbook hiện tại không có mốc volume nào thỏa mãn độ lệch >= -{target_max_gap_pct:.2f}%.\n\n"
+            f"   💡 CHI TIẾT LÝ DO: {fail_reason}\n\n"
+            f"   📐 CÔNG THỨC (Dương = Lãi, Âm = Lỗ):\n"
             f"      • A = Vốn USD mua S shares [{higher_name}]\n"
             f"      • B = Vốn USD mua S shares [{lower_name}]\n"
             f"      • Tiền Win (Payout) = S * 1.00 USD\n"
-            f"      • % Lệch = [((A + B) - S) / (A + B)] * 100%\n\n"
+            f"      • % Lệch = [(S - (A + B)) / (A + B)] * 100%\n\n"
             f"   🔍 KIỂM TRA MỐC BAN ĐẦU ({test_s:.2f} SHARES):\n"
             f"      • Vốn mua A [{higher_name}] ({test_s:.2f} shares) = ${test_cost_a:.2f} USD (VWAP: {avg_h_test:.4f})\n"
             f"      • Vốn mua B [{lower_name}] ({test_s:.2f} shares) = ${test_cost_b:.2f} USD (VWAP: {avg_l_test:.4f})\n"
             f"      • Tổng vốn bỏ ra (A + B): ${test_total:.2f} USD cho ${test_s:.2f} USD tiền Win\n"
-            f"      • Độ lệch % tại mốc {test_s:.2f} shares: [(${test_total:.2f} - ${test_s:.2f}) / ${test_total:.2f}] * 100% = {initial_gap:+.2f}%\n"
-            f"      • Mức volume nhỏ nhất kiểm tra ({target_shares:.2f} shares) có độ lệch thực tế là {actual_gap_pct:+.2f}%.\n\n"
-            f"   💡 NGUYÊN NHÂN VƯỢT MỤC TIÊU:\n"
-            f"      Tổng vốn mua tại mốc ban đầu {test_s:.2f} shares (${test_total:.2f} USD cho ${test_s:.2f} USD Win) đã tạo độ lệch {initial_gap:+.2f}%, "
-            f"vượt quá ngưỡng chênh lệch tối đa cho phép là {target_max_gap_pct:.2f}%!"
+            f"      • Độ lệch % tại mốc {test_s:.2f} shares: [(${test_s:.2f} - ${test_total:.2f}) / ${test_total:.2f}] * 100% = {initial_gap:+.2f}%\n"
         )
         return {
             "executable": False, 
@@ -306,8 +309,8 @@ def analyze_dual_option_hedged_buy(sorted_asks_1, sorted_asks_2, opt1_name, opt2
     total_investment = cost_higher + cost_lower
     pair_price = avg_price_higher + avg_price_lower
 
-    # Công thức chuẩn: ((A + B) - S) / (A + B) * 100%
-    gap_between_sides_pct = ((total_investment - target_shares) / total_investment) * 100.0 if total_investment > 0 else 0.0
+    # Công thức: (S - (A + B)) / (A + B) * 100% (Dương = lãi, Âm = lỗ)
+    gap_between_sides_pct = ((target_shares - total_investment) / total_investment) * 100.0 if total_investment > 0 else 0.0
     arbitrage_gap_pct = (pair_price - 1.00) * 100.0
     guaranteed_payout = target_shares * 1.00
     net_pnl = guaranteed_payout - total_investment
@@ -349,6 +352,7 @@ def analyze_dual_option_hedged_buy(sorted_asks_1, sorted_asks_2, opt1_name, opt2
         "arbitrage_gap_pct": round(arbitrage_gap_pct, 2),
         "guaranteed_payout": round(guaranteed_payout, 4),
         "net_pnl": round(net_pnl, 4),
+        "fail_reason": fail_reason,
     }
 
 
@@ -422,18 +426,19 @@ def print_dual_option_analysis(plan):
 
     print(f"\n📈 CHỈ SỐ SO SÁNH CHÊNH LỆCH VÀ PHÒNG HỘ ARBITRAGE:")
     print(
-        f"   📐 CÔNG THỨC: % Lệch = [((A + B) - Win_USD) / (A + B)] * 100%\n"
+        f"   📐 CÔNG THỨC: % Lệch = [(Win_USD - (A + B)) / (A + B)] * 100% (Dương = Lãi, Âm = Lỗ)\n"
         f"      👉 Chi tiết: Vốn Mua A [{plan['higher_name']}] = ${plan['cost_higher']:.2f} USD\n"
         f"      👉 Chi tiết: Vốn Mua B [{plan['lower_name']}] = ${plan['cost_lower']:.2f} USD\n"
         f"      👉 Tổng Vốn 2 Bên (A + B) = ${total_ab:.2f} USD\n"
         f"      👉 Tiền Nhận Khi Win (Payout = S) = ${payout_win:.2f} USD\n"
-        f"      👉 Tính toán: [(${total_ab:.2f} - ${payout_win:.2f}) / ${total_ab:.2f}] * 100% = {gap_val:+.2f}%"
+        f"      👉 Tính toán: [(${payout_win:.2f} - ${total_ab:.2f}) / ${total_ab:.2f}] * 100% = {gap_val:+.2f}%"
     )
-    print(f"   1. Tỉ lệ % Lệch Vốn vs Payout Win              : {gap_val:+.2f}% (Mục tiêu: <= {target_gap:.2f}%)")
+    print(f"   1. Tỉ lệ % Lệch Vốn vs Payout Win              : {gap_val:+.2f}% (Mục tiêu: >= -{target_gap:.2f}%)")
     print(f"   2. Vốn Mua Bên 1 [{plan['higher_name']}] (A)        : ${plan['cost_higher']:.4f} USD")
     print(f"   3. Vốn Mua Bên 2 [{plan['lower_name']}] (B)        : ${plan['cost_lower']:.4f} USD")
     print(f"   4. Tổng Vốn Đầu Tư 2 Bên (A + B)               : ${total_ab:.4f} USD")
     print(f"   5. Tiền Nhận Chắc Chắn Khi Win (Payout S)       : ${payout_win:.4f} USD")
+    print(f"   💡 Lý do dừng tăng số lượng Shares               : {plan.get('fail_reason', 'Không rõ')}")
 
     pnl = plan["net_pnl"]
     if pnl >= 0:

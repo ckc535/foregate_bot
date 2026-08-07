@@ -18,6 +18,9 @@ class ForeGateClient:
         self.base_url = base_url
         self.session_cookie = os.environ.get("FOREGATE_SESSION_COOKIE", None)
         self._http = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(pool_connections=50, pool_maxsize=50)
+        self._http.mount('https://', adapter)
+        self._http.mount('http://', adapter)
 
     def set_session_cookie(self, cookie):
         self.session_cookie = cookie
@@ -84,6 +87,7 @@ class ForeGateClient:
         res = self._http.request(
             method.upper(), self.base_url + full_path,
             headers=headers, data=raw_body if has_body else None,
+            timeout=10
         )
 
         # Capture the session cookie / acw_tc Gateway cookie from Set-Cookie
@@ -121,4 +125,23 @@ class ForeGateClient:
                 "outcomeId": str(outcome_id),
                 "optionId": str(option_id),
             },
+        )
+
+    def get_markets(self, page=1, page_size=100):
+        """Lấy danh sách thị trường."""
+        return self.request(
+            "GET",
+            "/markets/list",
+            query={
+                "page": str(page),
+                "pageSize": str(page_size),
+            }
+        )
+
+    def get_assets(self):
+        """Lấy số dư (balance) tài khoản."""
+        return self.request(
+            "GET",
+            "/account/assets",
+            cookie_required=True
         )

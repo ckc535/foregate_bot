@@ -1,0 +1,77 @@
+Screen {
+    background: #0f111a;
+    color: #e0e6ed;
+}
+
+#top_bar {
+    height: 3;
+    padding: 0 2;
+    margin: 1 2;
+    background: #1a1d27;
+    border: round #2c3140;
+    align: right middle;
+}
+
+#balance_info {
+    width: 1fr;
+    content-align: left middle;
+    color: #00e676;
+    text-style: bold;
+}
+
+.refresh_btn {
+    min-width: 5;
+    height: 1;
+    background: transparent;
+    color: #89b4fa;
+    border: none;
+}
+
+.refresh_btn:hover {
+    background: #2c3140;
+    color: #ffffff;
+}
+
+.refresh_btn:disabled {
+    color: #6c7086;
+}
+
+#main_content {
+    layout: grid;
+    grid-size: 2 1;
+    grid-columns: 1fr 1fr;
+    grid-gutter: 2;
+    margin: 0 2 1 2;
+    height: 1fr;
+}
+
+.table_container {
+    height: 1fr;
+    background: #1a1d27;
+    border: round #2c3140;
+    padding: 0 1;
+}
+
+.table_header {
+    height: 3;
+    align: right middle;
+    margin-bottom: 0;
+    border-bottom: solid #2c3140;
+}
+
+.table_title {
+    width: 1fr;
+    content-align: left middle;
+    text-style: bold;
+    color: #89b4fa;
+}
+
+DataTable {
+    background: transparent;
+    height: 1fr;
+    border: none;
+}
+
+DataTable:focus {
+    border: none;
+}

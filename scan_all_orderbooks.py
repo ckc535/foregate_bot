@@ -13,17 +13,19 @@ from get_orderbook_rest import load_env_file, analyze_dual_option_hedged_buy
 results_lock = Lock()
 
 
-def process_outcome(task_data, app_key, app_secret, api_key, session_cookie, target_max_gap_pct):
+def process_outcome(task_data, app_key, app_secret, api_key, session_cookie, target_max_gap_pct, client=None):
     market_id = task_data['market_id']
     market_title = task_data['market_title']
+    end_time = task_data.get('end_time', '')
     outcome_id = task_data['outcome_id']
     outcome_title = task_data['outcome_title']
     opt1 = task_data['opt1']
     opt2 = task_data['opt2']
 
-    client = ForeGateClient(app_key, app_secret, api_key)
-    if session_cookie:
-        client.set_session_cookie(session_cookie)
+    if client is None:
+        client = ForeGateClient(app_key, app_secret, api_key)
+        if session_cookie:
+            client.set_session_cookie(session_cookie)
 
     try:
         res1 = client.get_orderbook(market_id, outcome_id, opt1['option_id'])
@@ -47,7 +49,12 @@ def process_outcome(task_data, app_key, app_secret, api_key, session_cookie, tar
 
         if plan and plan.get("executable"):
             if plan.get("target_shares", 0) <= 50.0:
-                return None
+                return {
+                    "is_valid": False, 
+                    "market_title": market_title, 
+                    "outcome_title": outcome_title, 
+                    "reason": f"Chỉ mua được tối đa {plan.get('target_shares', 0)} shares (yêu cầu > 50). Lý do: {plan.get('fail_reason', '')}"
+                }
             total_ab = plan['total_investment']
             payout_win = plan['guaranteed_payout']
             gap_val = plan['gap_between_sides_pct']
@@ -58,6 +65,7 @@ def process_outcome(task_data, app_key, app_secret, api_key, session_cookie, tar
             return {
                 "market_id": market_id,
                 "market_title": market_title,
+                "end_time": end_time,
                 "outcome_id": outcome_id,
                 "outcome_title": outcome_title,
                 "option_1": {
@@ -83,7 +91,16 @@ def process_outcome(task_data, app_key, app_secret, api_key, session_cookie, tar
                 "buyable_shares_payout": plan['target_shares'],
                 "total_capital_spent": total_ab,
                 "percent_gap": gap_val,
-                "target_max_gap_pct": target_max_gap_pct
+                "target_max_gap_pct": target_max_gap_pct,
+                "fail_reason": plan.get("fail_reason", "Không có thông tin"),
+                "is_valid": True
+            }
+        else:
+            return {
+                "is_valid": False,
+                "market_title": market_title,
+                "outcome_title": outcome_title,
+                "reason": plan.get("reason", "Lỗi phân tích hoặc không đủ thanh khoản") if plan else "Không có kết quả phân tích"
             }
     except Exception as e:
         # Debug error if any occurs
@@ -92,7 +109,58 @@ def process_outcome(task_data, app_key, app_secret, api_key, session_cookie, tar
     return None
 
 
+def scan_markets_data(markets, app_key, app_secret, api_key, session_cookie=None, target_max_gap_pct=5.0, max_workers=20, client=None):
+    """
+    Hàm quét orderbook tái sử dụng được (không đọc file, không print).
+    Nhận danh sách markets trực tiếp, trả về (matched_results, invalid_results).
+    """
+    if client is None:
+        client = ForeGateClient(app_key, app_secret, api_key)
+        if session_cookie:
+            client.set_session_cookie(session_cookie)
+
+    tasks = []
+    for m in markets:
+        market_id = str(m.get('marketId', ''))
+        market_title = m.get('title', 'N/A')
+        end_time = m.get('endTime', '')
+        for oc in m.get('outcomes', []):
+            options = oc.get('options', [])
+            if len(options) >= 2:
+                tasks.append({
+                    "market_id": market_id,
+                    "market_title": market_title,
+                    "end_time": end_time,
+                    "outcome_id": str(oc.get('outcomeId', '')),
+                    "outcome_title": oc.get('title') or oc.get('name') or "Outcome",
+                    "opt1": {"option_id": str(options[0].get('optionId', '')), "name": options[0].get('title') or "Option 1"},
+                    "opt2": {"option_id": str(options[1].get('optionId', '')), "name": options[1].get('title') or "Option 2"},
+                })
+
+    matched_results = []
+    invalid_results = []
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_task = {
+            executor.submit(process_outcome, t, app_key, app_secret, api_key, session_cookie, target_max_gap_pct, client): t
+            for t in tasks
+        }
+        for future in as_completed(future_to_task):
+            res = future.result()
+            if res:
+                if res.get("is_valid", True):
+                    matched_results.append(res)
+                else:
+                    invalid_results.append(res)
+
+    # Sắp xếp kết quả theo end_time tăng dần (thời gian kết thúc gần nhất lên đầu)
+    matched_results.sort(key=lambda x: x.get('end_time') if x.get('end_time') is not None else "")
+
+    return matched_results, invalid_results
+
+
 def scan_all_markets(json_file='all_markets_sorted.json', output_json='scan_results.json', output_txt='scan_results.txt'):
+    sys.stdout.reconfigure(encoding='utf-8')
     load_env_file(".env")
 
     app_key = os.environ.get("FOREGATE_APP_KEY", "")
@@ -122,12 +190,14 @@ def scan_all_markets(json_file='all_markets_sorted.json', output_json='scan_resu
     for m in markets:
         market_id = str(m.get('marketId', ''))
         market_title = m.get('title', 'N/A')
+        end_time = m.get('endTime', '')
         for oc in m.get('outcomes', []):
             options = oc.get('options', [])
             if len(options) >= 2:
                 tasks.append({
                     "market_id": market_id,
                     "market_title": market_title,
+                    "end_time": end_time,
                     "outcome_id": str(oc.get('outcomeId', '')),
                     "outcome_title": oc.get('title') or oc.get('name') or "Outcome",
                     "opt1": {"option_id": str(options[0].get('optionId', '')), "name": options[0].get('title') or "Option 1"},
@@ -144,6 +214,7 @@ def scan_all_markets(json_file='all_markets_sorted.json', output_json='scan_resu
 
     start_time = time.time()
     matched_results = []
+    invalid_results = []
     completed_count = 0
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -158,7 +229,10 @@ def scan_all_markets(json_file='all_markets_sorted.json', output_json='scan_resu
 
             if res:
                 with results_lock:
-                    matched_results.append(res)
+                    if res.get("is_valid", True):
+                        matched_results.append(res)
+                    else:
+                        invalid_results.append(res)
 
             # In thanh tiến trình 1 dòng duy nhất trên terminal (không bị spam màn hình)
             elapsed = time.time() - start_time
@@ -176,8 +250,8 @@ def scan_all_markets(json_file='all_markets_sorted.json', output_json='scan_resu
     print(f"   • Số Outcomes MUA ĐƯỢC     : {len(matched_results)}")
     print("====================================================================================================\n")
 
-    # Sắp xếp kết quả theo % Lệch tốt nhất (thấp nhất) lên đầu
-    matched_results.sort(key=lambda x: x['percent_gap'])
+    # Sắp xếp kết quả theo thời gian kết thúc (endTime tăng dần - gần nhất lên đầu)
+    matched_results.sort(key=lambda x: x.get('end_time') if x.get('end_time') is not None else "")
 
     # 1. Ghi kết quả dạng JSON
     with open(output_json, 'w', encoding='utf-8') as f:
@@ -218,9 +292,24 @@ def scan_all_markets(json_file='all_markets_sorted.json', output_json='scan_resu
 
             f.write(f"    • Tổng Vốn (A+B)  : ${item['total_capital_spent']:.2f} USD\n")
             f.write(f"    • % Lệch Vốn/Win  : {item['percent_gap']:+.2f}%\n")
+            f.write(f"    • Lý do dừng tăng : {item.get('fail_reason', '')}\n")
             f.write("----------------------------------------------------------------------------------------------------\n")
 
-    print(f"📁 Đã lưu kết quả thành công vào:\n   1. {output_json}\n   2. {output_txt}\n")
+    # 3. Ghi danh sách các Outcomes bị loại (Invalid) ra file riêng để debug
+    invalid_file = 'scan_invalid.txt'
+    with open(invalid_file, 'w', encoding='utf-8') as f:
+        f.write("====================================================================================================\n")
+        f.write(f"🚫 DANH SÁCH OUTCOMES BỊ LOẠI (KHÔNG ĐẠT YÊU CẦU HOẶC LỖI)\n")
+        f.write(f"   Tổng số bị loại: {len(invalid_results)}\n")
+        f.write("====================================================================================================\n\n")
+        for idx, item in enumerate(invalid_results, 1):
+            f.write(f"[{idx}] Market: {item.get('market_title', 'N/A')}\n")
+            f.write(f"    • Outcome: {item.get('outcome_title', 'N/A')}\n")
+            reason_str = str(item.get('reason', '')).replace('\n', '\n      ')
+            f.write(f"    • Lý do: {reason_str}\n")
+            f.write("----------------------------------------------------------------------------------------------------\n")
+
+    print(f"📁 Đã lưu kết quả thành công vào:\n   1. {output_json}\n   2. {output_txt}\n   3. {invalid_file}\n")
 
 
 if __name__ == "__main__":
