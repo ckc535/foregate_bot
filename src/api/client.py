@@ -4,10 +4,9 @@ import hmac
 import json
 import os
 from datetime import datetime, timezone
-
 import requests
 
-BASE_URL = os.environ.get("FOREGATE_BASE_URL", "https://openapi.foregate.com")
+from src.config import BASE_URL, SESSION_COOKIE
 
 
 class ForeGateClient:
@@ -16,9 +15,9 @@ class ForeGateClient:
         self.app_secret = app_secret
         self.api_key = api_key
         self.base_url = base_url
-        self.session_cookie = os.environ.get("FOREGATE_SESSION_COOKIE", None)
+        self.session_cookie = SESSION_COOKIE or os.environ.get("FOREGATE_SESSION_COOKIE", None)
         self._http = requests.Session()
-        adapter = requests.adapters.HTTPAdapter(pool_connections=50, pool_maxsize=50)
+        adapter = requests.adapters.HTTPAdapter(pool_connections=100, pool_maxsize=100, max_retries=1)
         self._http.mount('https://', adapter)
         self._http.mount('http://', adapter)
 
@@ -62,7 +61,6 @@ class ForeGateClient:
         date = self.gateway_date()
         full_path = self.signed_path(path, query)
 
-        # REST requests sign only x-api-key (the cookie is sent but not signed)
         signature = self.sign(
             method.upper(), content_md5, content_type, date,
             {"x-api-key": self.api_key}, full_path,
@@ -90,12 +88,9 @@ class ForeGateClient:
             timeout=10
         )
 
-        # Capture the session cookie / acw_tc Gateway cookie from Set-Cookie
         if res.cookies:
             self.session_cookie = "; ".join(f"{c.name}={c.value}" for c in res.cookies)
 
-        # Nếu thiếu Header Cookie trên request 1, Gateway sẽ trả về 401 và phát hành acw_tc Cookie.
-        # Tự động thử lại 1 lần duy nhất với Cookie vừa bắt được.
         if not res.ok and _retry_count == 0 and "Missing Cookie header" in res.text and self.session_cookie:
             return self.request(method, path, query=query, body=body, cookie_required=cookie_required, _retry_count=1)
 
@@ -107,7 +102,7 @@ class ForeGateClient:
         except ValueError:
             return res.text
 
-    def register(self, marchant_user_id, user_email=None, merchant_id=None):
+    def register(self, marchant_user_id="ckc", user_email="ckc@gmail.com", merchant_id="101001"):
         body = {"marchantUserId": marchant_user_id}
         if user_email:
             body["userEmail"] = user_email
@@ -116,7 +111,6 @@ class ForeGateClient:
         return self.request("POST", "/user/register", body=body)
 
     def get_orderbook(self, market_id, outcome_id, option_id):
-        """Lấy Orderbook Snapshot từ REST API GET /orderbook/book."""
         return self.request(
             "GET",
             "/orderbook/book",
@@ -128,7 +122,6 @@ class ForeGateClient:
         )
 
     def get_markets(self, page=1, page_size=100):
-        """Lấy danh sách thị trường."""
         return self.request(
             "GET",
             "/markets/list",
@@ -139,7 +132,6 @@ class ForeGateClient:
         )
 
     def get_assets(self):
-        """Lấy số dư (balance) tài khoản."""
         return self.request(
             "GET",
             "/account/assets",

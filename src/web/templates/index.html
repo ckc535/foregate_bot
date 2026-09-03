@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FOREGATE // 3D CYBERPUNK ARBITRAGE TERMINAL</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom Optimized CSS -->
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- Main Container HUD -->
+    <div class="hud-container">
+        <!-- Top Navigation Bar -->
+        <header class="hud-header">
+            <div class="brand-section">
+                <div class="logo-cube">
+                    <div class="cube-inner">
+                        <div class="face front">F</div>
+                        <div class="face back">G</div>
+                        <div class="face right">⚡</div>
+                        <div class="face left">3D</div>
+                        <div class="face top"></div>
+                        <div class="face bottom"></div>
+                    </div>
+                </div>
+                <div class="brand-text">
+                    <h1>FOREGATE <span class="badge-3d">3D TERMINAL</span></h1>
+                    <p class="subtitle">AUTOMATED ARBITRAGE & ORDERBOOK ENGINE v2.4</p>
+                </div>
+            </div>
+
+            <div class="status-cluster">
+                <div class="status-pill active" id="bot-status-indicator">
+                    <span class="pulse-dot"></span>
+                    <span id="bot-status-text">SYSTEM ONLINE</span>
+                </div>
+                <div class="time-box">
+                    <i class="far fa-clock"></i>
+                    <span id="live-clock">--:--:-- UTC</span>
+                </div>
+                <button class="btn-neon" id="manual-scan-btn" onclick="triggerManualScan()">
+                    <i class="fas fa-bolt"></i> <span>SCAN NOW</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- 3D KPI STATS CARDS -->
+        <section class="kpi-grid">
+            <!-- Card 1: Balance -->
+            <div class="kpi-card cyan-glow">
+                <div class="card-glass">
+                    <div class="card-icon"><i class="fas fa-wallet"></i></div>
+                    <div class="card-content">
+                        <div class="card-label-row">
+                            <span class="card-label">AVAILABLE BALANCE</span>
+                            <button class="btn-refresh-balance" onclick="refreshBalance(event)" title="Refresh Balance">
+                                <i class="fas fa-sync-alt" id="balance-spin-icon"></i>
+                            </button>
+                        </div>
+                        <h2 class="card-value glow-text-cyan" id="kpi-balance">$0.00</h2>
+                        <div class="card-meta">
+                            <span><i class="fas fa-lock"></i> Frozen: <strong id="kpi-frozen">$0.00</strong></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 2: Portfolio PnL -->
+            <div class="kpi-card emerald-glow">
+                <div class="card-glass">
+                    <div class="card-icon"><i class="fas fa-chart-pie"></i></div>
+                    <div class="card-content">
+                        <span class="card-label">TOTAL POSITIONS VALUE</span>
+                        <h2 class="card-value glow-text-emerald" id="kpi-portfolio-val">$0.00</h2>
+                        <div class="card-meta">
+                            <span id="kpi-portfolio-pnl" class="positive">PnL: +$0.00 (+0.00%)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 3: Opportunities -->
+            <div class="kpi-card purple-glow">
+                <div class="card-glass">
+                    <div class="card-icon"><i class="fas fa-crosshairs"></i></div>
+                    <div class="card-content">
+                        <span class="card-label">ARBITRAGE TARGETS</span>
+                        <h2 class="card-value glow-text-purple" id="kpi-targets-count">0 OPPS</h2>
+                        <div class="card-meta">
+                            <span id="kpi-best-gap"><i class="fas fa-fire"></i> Best Gap: 0.00%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card 4: Scanner Engine -->
+            <div class="kpi-card amber-glow">
+                <div class="card-glass">
+                    <div class="card-icon"><i class="fas fa-radar"></i></div>
+                    <div class="card-content">
+                        <span class="card-label">SCANNER STATUS</span>
+                        <h2 class="card-value glow-text-amber" id="kpi-scanner-state">LIVE STREAM</h2>
+                        <div class="card-meta">
+                            <span><i class="fas fa-shield-alt"></i> Coverage: <strong id="kpi-scanned-markets">0</strong> mkts</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Dashboard 3D Panels Split -->
+        <main class="dashboard-split">
+            <!-- Left Panel: Live Arbitrage Opportunities -->
+            <section class="panel-3d" id="panel-opportunities">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <i class="fas fa-satellite-dish"></i>
+                        <h2>Live Arbitrage Scanner</h2>
+                        <span class="tag-counter" id="opps-badge">0 Found</span>
+                    </div>
+                    <div class="panel-actions">
+                        <span class="auto-badge"><i class="fas fa-sync-alt fa-spin"></i> Live 1.5s</span>
+                    </div>
+                </div>
+
+                <div class="table-wrapper">
+                    <table class="hud-table" id="table-markets">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Market</th>
+                                <th>Outcome</th>
+                                <th>Shares</th>
+                                <th>Price A</th>
+                                <th>Price B</th>
+                                <th>Cost (A+B)</th>
+                                <th>Gap %</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="markets-tbody">
+                            <tr>
+                                <td colspan="9" class="empty-state">
+                                    <div class="radar-spinner"></div>
+                                    <p>Scanning orderbooks for profitable spreads...</p>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- Right Panel: Positions & 3D Depth Visualizer -->
+            <section class="panel-3d" id="panel-positions">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <i class="fas fa-layer-group"></i>
+                        <h2>Active Positions & Risk</h2>
+                    </div>
+                    <div class="panel-actions">
+                        <button class="btn-small" onclick="fetchLiveStream()"><i class="fas fa-redo"></i></button>
+                    </div>
+                </div>
+
+                <div class="table-wrapper">
+                    <table class="hud-table" id="table-positions">
+                        <thead>
+                            <tr>
+                                <th>Market</th>
+                                <th>Outcome</th>
+                                <th>Option</th>
+                                <th>Shares</th>
+                                <th>Cost</th>
+                                <th>P&L (Unrealized)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positions-tbody">
+                            <tr>
+                                <td colspan="6" class="empty-state">Loading portfolio positions...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- 3D Orderbook Mini Matrix -->
+                <div class="depth-matrix-box">
+                    <div class="matrix-header">
+                        <span><i class="fas fa-cubes"></i> 3D SPREAD MATRIX & DEPTH INTENSITY</span>
+                        <span class="matrix-legend">
+                            <span class="dot-green"></span> BUY A
+                            <span class="dot-pink"></span> BUY B
+                        </span>
+                    </div>
+                    <div class="depth-bars-container" id="depth-bars">
+                        <!-- Bars dynamically generated by JS -->
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- 3D Orderbook Inspector Modal -->
+    <div id="inspector-modal" class="modal-backdrop" onclick="closeOrderbookModal(event)">
+        <div class="modal-3d" onclick="event.stopPropagation()">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <i class="fas fa-microscope" style="color:var(--neon-cyan)"></i>
+                    <h3 id="modal-market-title">Orderbook Depth Breakdown</h3>
+                </div>
+                <button class="btn-close" onclick="closeOrderbookModal()">&times;</button>
+            </div>
+            <div class="modal-body" id="modal-content-body">
+                <!-- Injected via JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast System -->
+    <div id="toast-container"></div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

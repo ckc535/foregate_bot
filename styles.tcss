@@ -1,75 +1,176 @@
+/* =========================================================================
+   FOREGATE 3D CYBERPUNK DEPTH THEME
+   ========================================================================= */
+
 Screen {
-    background: #0f111a;
-    color: #e0e6ed;
+    background: #090d16;
+    color: #e2e8f0;
 }
 
-#top_bar {
-    height: 3;
-    padding: 0 2;
-    margin: 1 2;
-    background: #1a1d27;
-    border: round #2c3140;
-    align: right middle;
-}
-
-#balance_info {
-    width: 1fr;
-    content-align: left middle;
-    color: #00e676;
+Header {
+    background: #0f172a;
+    color: #38bdf8;
     text-style: bold;
-}
-
-.refresh_btn {
-    min-width: 5;
+    dock: top;
     height: 1;
-    background: transparent;
-    color: #89b4fa;
-    border: none;
 }
 
-.refresh_btn:hover {
-    background: #2c3140;
+Footer {
+    background: #0f172a;
+    color: #94a3b8;
+    dock: bottom;
+    height: 1;
+}
+
+/* --- 3D KPI STAT CARDS ROW --- */
+#kpi_container {
+    height: 5;
+    margin: 1 2 0 2;
+    layout: grid;
+    grid-size: 4 1;
+    grid-columns: 1fr 1fr 1fr 1fr;
+    grid-gutter: 1;
+}
+
+.kpi_card {
+    height: 5;
+    background: #111827;
+    border: tall #1e293b;
+    padding: 0 1;
+    align: center middle;
+}
+
+.kpi_card:hover {
+    border: tall #38bdf8;
+    background: #1e293b;
+}
+
+.kpi_card_cyan {
+    border-top: heavy #00f2fe;
+    border-left: heavy #00f2fe;
+    border-bottom: heavy #083344;
+    border-right: heavy #083344;
+}
+
+.kpi_card_emerald {
+    border-top: heavy #10b981;
+    border-left: heavy #10b981;
+    border-bottom: heavy #064e3b;
+    border-right: heavy #064e3b;
+}
+
+.kpi_card_purple {
+    border-top: heavy #a855f7;
+    border-left: heavy #a855f7;
+    border-bottom: heavy #3b0764;
+    border-right: heavy #3b0764;
+}
+
+.kpi_card_amber {
+    border-top: heavy #f59e0b;
+    border-left: heavy #f59e0b;
+    border-bottom: heavy #451a03;
+    border-right: heavy #451a03;
+}
+
+.kpi_title {
+    text-style: bold;
+    color: #94a3b8;
+    content-align: center middle;
+    height: 1;
+}
+
+.kpi_value {
+    text-style: bold;
     color: #ffffff;
+    content-align: center middle;
+    height: 1;
 }
 
-.refresh_btn:disabled {
-    color: #6c7086;
+.kpi_sub {
+    color: #64748b;
+    content-align: center middle;
+    height: 1;
 }
 
+/* --- MAIN TABLES CONTAINER --- */
 #main_content {
     layout: grid;
     grid-size: 2 1;
-    grid-columns: 1fr 1fr;
+    grid-columns: 1.2fr 1fr;
     grid-gutter: 2;
-    margin: 0 2 1 2;
+    margin: 1 2 1 2;
     height: 1fr;
 }
 
 .table_container {
     height: 1fr;
-    background: #1a1d27;
-    border: round #2c3140;
+    background: #0f172a;
+    border: tall #1e293b;
+    border-top: heavy #334155;
+    border-left: heavy #334155;
+    border-bottom: heavy #020617;
+    border-right: heavy #020617;
     padding: 0 1;
 }
 
 .table_header {
     height: 3;
     align: right middle;
-    margin-bottom: 0;
-    border-bottom: solid #2c3140;
+    border-bottom: solid #1e293b;
+    padding: 0 1;
 }
 
 .table_title {
     width: 1fr;
     content-align: left middle;
     text-style: bold;
-    color: #89b4fa;
+    color: #38bdf8;
 }
 
+/* --- 3D INTERACTIVE BUTTONS --- */
+.refresh_btn {
+    min-width: 6;
+    height: 1;
+    background: #1e293b;
+    color: #38bdf8;
+    border: tall #334155;
+    text-style: bold;
+}
+
+.refresh_btn:hover {
+    background: #0284c7;
+    color: #ffffff;
+    border: tall #38bdf8;
+}
+
+.refresh_btn:disabled {
+    background: #0f172a;
+    color: #475569;
+    border: tall #1e293b;
+}
+
+/* --- DATA TABLE 3D STYLING --- */
 DataTable {
     background: transparent;
     height: 1fr;
     border: none;
+}
+
+DataTable > .datatable--header {
+    background: #1e293b;
+    color: #38bdf8;
+    text-style: bold;
+}
+
+DataTable > .datatable--cursor {
+    background: #1e3a8a;
+    color: #ffffff;
+    text-style: bold;
+}
+
+DataTable > .datatable--hover {
+    background: #1e293b;
 }
 
 DataTable:focus {

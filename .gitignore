@@ -1,19 +1,24 @@
 # Environment and secret credentials
 .env
 *.env.local
+.env.*
 
-# Python cache
+# Python bytecode and cache (Thư mục cache tự sinh)
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.mypy_cache/
 
-# Scanned data files
-all_markets_sorted.json
-scan_results.json
-scan_results.txt
-scan_invalid.txt
+# Scanned data dumps and logs
+*.json
+!package.json
+*.txt
+!requirements.txt
 *.log
 
-# OS metadata
+# OS & Editor metadata
 .DS_Store
 Thumbs.db
+.idea/
+.vscode/
